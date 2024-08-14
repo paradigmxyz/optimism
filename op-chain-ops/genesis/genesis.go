@@ -67,6 +67,7 @@ func NewL2Genesis(config *DeployConfig, l1StartHeader *types.Header) (*core.Gene
 		CancunTime:              config.EcotoneTime(l1StartTime),
 		EcotoneTime:             config.EcotoneTime(l1StartTime),
 		FjordTime:               config.FjordTime(l1StartTime),
+		PragueTime:              config.PragueTime(l1StartTime),
 		GraniteTime:             config.GraniteTime(l1StartTime),
 		HoloceneTime:            config.HoloceneTime(l1StartTime),
 		IsthmusTime:             config.IsthmusTime(l1StartTime),

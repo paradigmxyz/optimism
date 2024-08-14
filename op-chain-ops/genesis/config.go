@@ -333,6 +333,7 @@ type UpgradeScheduleDeployConfig struct {
 	// L2GenesisDeltaTimeOffset is the number of seconds after genesis block that Delta hard fork activates.
 	// Set it to 0 to activate at genesis. Nil to disable Delta.
 	L2GenesisDeltaTimeOffset *hexutil.Uint64 `json:"l2GenesisDeltaTimeOffset,omitempty"`
+
 	// L2GenesisEcotoneTimeOffset is the number of seconds after genesis block that Ecotone hard fork activates.
 	// Set it to 0 to activate at genesis. Nil to disable Ecotone.
 	L2GenesisEcotoneTimeOffset *hexutil.Uint64 `json:"l2GenesisEcotoneTimeOffset,omitempty"`
@@ -351,6 +352,10 @@ type UpgradeScheduleDeployConfig struct {
 	// L2GenesisInteropTimeOffset is the number of seconds after genesis block that the Interop hard fork activates.
 	// Set it to 0 to activate at genesis. Nil to disable Interop.
 	L2GenesisInteropTimeOffset *hexutil.Uint64 `json:"l2GenesisInteropTimeOffset,omitempty"`
+
+	// L2GenesisPragueTimeOffset is the number of seconds after genesis block that Ecotone hard fork activates.
+	// Set it to 0 to activate at genesis. Nil to disable Ecotone.
+	L2GenesisPragueTimeOffset *hexutil.Uint64 `json:"l2GenesisPragueTimeOffset,omitempty"`
 
 	// When Cancun activates. Relative to L1 genesis.
 	L1CancunTimeOffset *hexutil.Uint64 `json:"l1CancunTimeOffset,omitempty"`
@@ -465,6 +470,10 @@ func (d *UpgradeScheduleDeployConfig) DeltaTime(genesisTime uint64) *uint64 {
 
 func (d *UpgradeScheduleDeployConfig) EcotoneTime(genesisTime uint64) *uint64 {
 	return offsetToUpgradeTime(d.L2GenesisEcotoneTimeOffset, genesisTime)
+}
+
+func (d *UpgradeScheduleDeployConfig) PragueTime(genesisTime uint64) *uint64 {
+	return offsetToUpgradeTime(d.L2GenesisPragueTimeOffset, genesisTime)
 }
 
 func (d *UpgradeScheduleDeployConfig) FjordTime(genesisTime uint64) *uint64 {
@@ -1018,6 +1027,7 @@ func (d *DeployConfig) RollupConfig(l1StartBlock *types.Header, l2GenesisBlockHa
 		DeltaTime:               d.DeltaTime(l1StartTime),
 		EcotoneTime:             d.EcotoneTime(l1StartTime),
 		FjordTime:               d.FjordTime(l1StartTime),
+		PragueTime:              d.PragueTime(l1StartTime),
 		GraniteTime:             d.GraniteTime(l1StartTime),
 		HoloceneTime:            d.HoloceneTime(l1StartTime),
 		IsthmusTime:             d.IsthmusTime(l1StartTime),
