@@ -52,7 +52,7 @@ type spanBatchSetCodeTxData struct {
 	GasFeeCap  *uint256.Int // a.k.a. maxFeePerGas
 	Data       []byte
 	AccessList types.AccessList
-	AuthList   types.AuthorizationList
+	AuthList   []types.SetCodeAuthorization
 }
 
 func (txData *spanBatchSetCodeTxData) txType() byte { return types.SetCodeTxType }
@@ -195,7 +195,7 @@ func (tx *spanBatchTx) convertToFullTx(nonce, gas uint64, to *common.Address, ch
 			GasTipCap:  batchTxInner.GasTipCap,
 			GasFeeCap:  batchTxInner.GasFeeCap,
 			Gas:        gas,
-			To:         to,
+			To:         *to,
 			Value:      batchTxInner.Value,
 			Data:       batchTxInner.Data,
 			AccessList: batchTxInner.AccessList,
@@ -242,7 +242,7 @@ func newSpanBatchTx(tx *types.Transaction) (*spanBatchTx, error) {
 			Value:      uint256.MustFromBig(tx.Value()),
 			Data:       tx.Data(),
 			AccessList: tx.AccessList(),
-			AuthList:   tx.AuthList(),
+			AuthList:   tx.SetCodeAuthorizations(),
 		}
 	default:
 		return nil, fmt.Errorf("invalid tx type: %d", tx.Type())
