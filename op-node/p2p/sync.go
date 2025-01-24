@@ -57,7 +57,7 @@ const (
 	// If the client hits a request error, it counts as a lot of rate-limit tokens for syncing from that peer:
 	// we rather sync from other servers. We'll try again later,
 	// and eventually kick the peer based on degraded scoring if it's really not serving us well.
-	// TODO(CLI-4009): Use a backoff rather than this mechanism.
+	// TODO: Use a backoff rather than this mechanism.
 	clientErrRateCost = peerServerBlocksBurst
 )
 
@@ -310,7 +310,7 @@ func NewSyncClient(log log.Logger, cfg *rollup.Config, host HostNewStream, rcv r
 	}
 
 	// never errors with positive LRU cache size
-	// TODO(CLI-3733): if we had an LRU based on on total payloads size, instead of payload count,
+	// TODO: if we had an LRU based on on total payloads size, instead of payload count,
 	//  we can safely buffer more data in the happy case.
 	q, _ := simplelru.NewLRU[common.Hash, syncResult](100, c.onQuarantineEvict)
 	c.quarantine = q
@@ -346,6 +346,9 @@ func (s *SyncClient) AddPeer(id peer.ID) {
 func (s *SyncClient) RemovePeer(id peer.ID) {
 	s.peersLock.Lock()
 	defer s.peersLock.Unlock()
+	if s.closingPeers {
+		return
+	}
 	cancel, ok := s.peers[id]
 	if !ok {
 		s.log.Warn("cannot remove peer from sync duties, peer was not registered", "peer", id)
