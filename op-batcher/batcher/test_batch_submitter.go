@@ -27,7 +27,7 @@ func (l *TestBatchSubmitter) JamTxPool(ctx context.Context) error {
 	}
 	var candidate *txmgr.TxCandidate
 	var err error
-	cc := l.state.cfgProvider.ChannelConfig()
+	cc := l.channelMgr.cfgProvider.ChannelConfig()
 	if cc.UseBlobs {
 		candidate = l.calldataTxCandidate([]byte{})
 	} else if candidate, err = l.blobTxCandidate(emptyTxData); err != nil {
@@ -37,8 +37,12 @@ func (l *TestBatchSubmitter) JamTxPool(ctx context.Context) error {
 		return err
 	}
 
+	simpleTxMgr, ok := l.Txmgr.(*txmgr.SimpleTxManager)
+	if !ok {
+		return errors.New("txmgr is not a SimpleTxManager")
+	}
 	l.ttm = &txmgr.TestTxManager{
-		SimpleTxManager: l.Txmgr,
+		SimpleTxManager: simpleTxMgr,
 	}
 	l.Log.Info("sending txpool blocking test tx")
 	if err := l.ttm.JamTxPool(ctx, *candidate); err != nil {

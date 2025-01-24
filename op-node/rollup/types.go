@@ -2,8 +2,10 @@ package rollup
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"time"
 
@@ -121,6 +123,10 @@ type Config struct {
 	// HoloceneTime sets the activation time of the Holocene network upgrade.
 	// Active if HoloceneTime != nil && L2 block timestamp >= *HoloceneTime, inactive otherwise.
 	HoloceneTime *uint64 `json:"holocene_time,omitempty"`
+
+	// IsthmusTime sets the activation time of the Isthmus network upgrade.
+	// Active if IsthmusTime != nil && L2 block timestamp >= *IsthmusTime, inactive otherwise.
+	IsthmusTime *uint64 `json:"isthmus_time,omitempty"`
 
 	// InteropTime sets the activation time for an experimental feature-set, activated like a hardfork.
 	// Active if InteropTime != nil && L2 block timestamp >= *InteropTime, inactive otherwise.
@@ -334,6 +340,10 @@ func (cfg *Config) Check() error {
 	return nil
 }
 
+func (cfg *Config) HasOptimismWithdrawalsRoot(timestamp uint64) bool {
+	return cfg.IsIsthmus(timestamp)
+}
+
 // validateAltDAConfig checks the two approaches to configuring alt-da mode.
 // If the legacy values are set, they are copied to the new location. If both are set, they are check for consistency.
 func validateAltDAConfig(cfg *Config) error {
@@ -406,6 +416,11 @@ func (c *Config) IsHolocene(timestamp uint64) bool {
 	return c.HoloceneTime != nil && timestamp >= *c.HoloceneTime
 }
 
+// IsIsthmus returns true if the Isthmus hardfork is active at or past the given timestamp.
+func (c *Config) IsIsthmus(timestamp uint64) bool {
+	return c.IsthmusTime != nil && timestamp >= *c.IsthmusTime
+}
+
 // IsInterop returns true if the Interop hardfork is active at or past the given timestamp.
 func (c *Config) IsInterop(timestamp uint64) bool {
 	return c.InteropTime != nil && timestamp >= *c.InteropTime
@@ -461,10 +476,29 @@ func (c *Config) IsHoloceneActivationBlock(l2BlockTime uint64) bool {
 		!c.IsHolocene(l2BlockTime-c.BlockTime)
 }
 
+// IsIsthmusActivationBlock returns whether the specified block is the first block subject to the
+// Isthmus upgrade.
+func (c *Config) IsIsthmusActivationBlock(l2BlockTime uint64) bool {
+	return c.IsIsthmus(l2BlockTime) &&
+		l2BlockTime >= c.BlockTime &&
+		!c.IsIsthmus(l2BlockTime-c.BlockTime)
+}
+
 func (c *Config) IsInteropActivationBlock(l2BlockTime uint64) bool {
 	return c.IsInterop(l2BlockTime) &&
 		l2BlockTime >= c.BlockTime &&
 		!c.IsInterop(l2BlockTime-c.BlockTime)
+}
+
+// IsActivationBlock returns the fork which activates at the block with time newTime if the previous
+// block's time is oldTime. It return an empty ForkName if no fork activation takes place between
+// those timestamps. It can be used for both, L1 and L2 blocks.
+// TODO(12490): Currently only supports Holocene. Will be modularized in a follow-up.
+func (c *Config) IsActivationBlock(oldTime, newTime uint64) ForkName {
+	if c.IsHolocene(newTime) && !c.IsHolocene(oldTime) {
+		return Holocene
+	}
+	return ""
 }
 
 func (c *Config) ActivateAtGenesis(hardfork ForkName) {
@@ -472,6 +506,9 @@ func (c *Config) ActivateAtGenesis(hardfork ForkName) {
 	switch hardfork {
 	case Interop:
 		c.InteropTime = new(uint64)
+		fallthrough
+	case Isthmus:
+		c.IsthmusTime = new(uint64)
 		fallthrough
 	case Holocene:
 		c.HoloceneTime = new(uint64)
@@ -612,6 +649,7 @@ func (c *Config) Description(l2Chains map[string]string) string {
 	banner += fmt.Sprintf("  - Fjord: %s\n", fmtForkTimeOrUnset(c.FjordTime))
 	banner += fmt.Sprintf("  - Granite: %s\n", fmtForkTimeOrUnset(c.GraniteTime))
 	banner += fmt.Sprintf("  - Holocene: %s\n", fmtForkTimeOrUnset(c.HoloceneTime))
+	banner += fmt.Sprintf("  - Isthmus: %s\n", fmtForkTimeOrUnset(c.IsthmusTime))
 	banner += fmt.Sprintf("  - Interop: %s\n", fmtForkTimeOrUnset(c.InteropTime))
 	// Report the protocol version
 	banner += fmt.Sprintf("Node supports up to OP-Stack Protocol Version: %s\n", OPStackSupport)
@@ -648,9 +686,19 @@ func (c *Config) LogDescription(log log.Logger, l2Chains map[string]string) {
 		"fjord_time", fmtForkTimeOrUnset(c.FjordTime),
 		"granite_time", fmtForkTimeOrUnset(c.GraniteTime),
 		"holocene_time", fmtForkTimeOrUnset(c.HoloceneTime),
+		"isthmus_time", fmtForkTimeOrUnset(c.IsthmusTime),
 		"interop_time", fmtForkTimeOrUnset(c.InteropTime),
 		"alt_da", c.AltDAConfig != nil,
 	)
+}
+
+func (c *Config) ParseRollupConfig(in io.Reader) error {
+	dec := json.NewDecoder(in)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(c); err != nil {
+		return fmt.Errorf("failed to decode rollup config: %w", err)
+	}
+	return nil
 }
 
 func fmtForkTimeOrUnset(v *uint64) string {

@@ -15,9 +15,9 @@ func TestKonaFillHostCommand(t *testing.T) {
 	cfg := Config{
 		L1:       "http://localhost:8888",
 		L1Beacon: "http://localhost:9000",
-		L2:       "http://localhost:9999",
+		L2s:      []string{"http://localhost:9999"},
 		Server:   "./bin/mockserver",
-		Network:  "op-mainnet",
+		Networks: []string{"op-mainnet"},
 	}
 	inputs := utils.LocalGameInputs{
 		L1Head:        common.Hash{0x11},
@@ -26,11 +26,12 @@ func TestKonaFillHostCommand(t *testing.T) {
 		L2Claim:       common.Hash{0x44},
 		L2BlockNumber: big.NewInt(3333),
 	}
-	vmConfig := NewKonaServerExecutor()
+	vmConfig := NewKonaExecutor()
 
 	args, err := vmConfig.OracleCommand(cfg, dir, inputs)
 	require.NoError(t, err)
 
+	require.True(t, slices.Contains(args, "single"))
 	require.True(t, slices.Contains(args, "--server"))
 	require.True(t, slices.Contains(args, "--l1-node-address"))
 	require.True(t, slices.Contains(args, "--l1-beacon-address"))
