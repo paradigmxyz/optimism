@@ -147,7 +147,6 @@ COPY --from=op-wheel-builder /app/op-wheel/bin/op-wheel /usr/local/bin/
 CMD ["op-wheel"]
 
 FROM $TARGET_BASE_IMAGE AS op-node-target
-RUN apk add --no-cache jq
 COPY --from=op-node-builder /app/op-node/bin/op-node /usr/local/bin/
 CMD ["op-node"]
 
@@ -162,7 +161,6 @@ COPY --from=op-challenger-builder /app/op-challenger/bin/op-challenger /usr/loca
 COPY --from=op-program-builder /app/op-program/bin/op-program /usr/local/bin/
 ENV OP_CHALLENGER_CANNON_SERVER=/usr/local/bin/op-program
 COPY --from=cannon-builder /app/cannon/bin/cannon /usr/local/bin/
-RUN apk add --no-cache jq
 ENV OP_CHALLENGER_CANNON_BIN=/usr/local/bin/cannon
 # Copy in kona and asterisc
 COPY --from=kona /kona-host /usr/local/bin/
@@ -172,17 +170,14 @@ ENV OP_CHALLENGER_ASTERISC_BIN=/usr/local/bin/asterisc
 CMD ["op-challenger"]
 
 FROM $TARGET_BASE_IMAGE AS op-dispute-mon-target
-RUN apk add --no-cache jq
 COPY --from=op-dispute-mon-builder /app/op-dispute-mon/bin/op-dispute-mon /usr/local/bin/
 CMD ["op-dispute-mon"]
 
 FROM $TARGET_BASE_IMAGE AS op-batcher-target
-RUN apk add --no-cache jq
 COPY --from=op-batcher-builder /app/op-batcher/bin/op-batcher /usr/local/bin/
 CMD ["op-batcher"]
 
 FROM $TARGET_BASE_IMAGE AS op-proposer-target
-RUN apk add --no-cache jq
 COPY --from=op-proposer-builder /app/op-proposer/bin/op-proposer /usr/local/bin/
 CMD ["op-proposer"]
 
@@ -195,7 +190,6 @@ COPY --from=da-server-builder /app/op-alt-da/bin/da-server /usr/local/bin/
 CMD ["da-server"]
 
 FROM $TARGET_BASE_IMAGE AS op-supervisor-target
-RUN apk add --no-cache jq
 COPY --from=op-supervisor-builder /app/op-supervisor/bin/op-supervisor /usr/local/bin/
 CMD ["op-supervisor"]
 
