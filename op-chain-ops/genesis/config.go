@@ -985,6 +985,13 @@ func (d *DeployConfig) RollupConfig(l1StartBlock *types.Header, l2GenesisBlockHa
 	if d.SystemConfigProxy == (common.Address{}) {
 		return nil, errors.New("SystemConfigProxy cannot be address(0)")
 	}
+
+	chainOpConfig := &params.OptimismConfig{
+		EIP1559Elasticity:        d.EIP1559Elasticity,
+		EIP1559Denominator:       d.EIP1559Denominator,
+		EIP1559DenominatorCanyon: &d.EIP1559DenominatorCanyon,
+	}
+
 	var altDA *rollup.AltDAConfig
 	if d.UseAltDA {
 		altDA = &rollup.AltDAConfig{
@@ -1031,6 +1038,7 @@ func (d *DeployConfig) RollupConfig(l1StartBlock *types.Header, l2GenesisBlockHa
 		InteropTime:             d.InteropTime(l1StartTime),
 		ProtocolVersionsAddress: d.ProtocolVersionsProxy,
 		AltDAConfig:             altDA,
+		ChainOpConfig:           chainOpConfig,
 	}, nil
 }
 
