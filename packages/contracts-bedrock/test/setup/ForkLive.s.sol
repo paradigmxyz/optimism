@@ -12,7 +12,7 @@ import { Deployer } from "scripts/deploy/Deployer.sol";
 import { Deploy } from "scripts/deploy/Deploy.s.sol";
 
 // Libraries
-import { GameTypes } from "src/dispute/lib/Types.sol";
+import { GameTypes, Claim } from "src/dispute/lib/Types.sol";
 import { EIP1967Helper } from "test/mocks/EIP1967Helper.sol";
 
 // Interfaces
@@ -37,6 +37,8 @@ import { IAnchorStateRegistry } from "interfaces/dispute/IAnchorStateRegistry.so
 contract ForkLive is Deployer {
     using stdToml for string;
 
+    bool public useOpsRepo;
+
     /// @notice Returns the base chain name to use for forking
     /// @return The base chain name as a string
     function baseChain() internal view returns (string memory) {
@@ -49,20 +51,37 @@ contract ForkLive is Deployer {
         return vm.envOr("FORK_OP_CHAIN", string("op"));
     }
 
-    /// @notice Forks, upgrades and tests a production network.
-    /// @dev This function sets up the system to test by:
-    ///      1. reading the superchain-registry to get the contract addresses we wish to test from that network.
-    ///      2. deploying the updated OPCM and implementations of the contracts.
-    ///      3. upgrading the system using the OPCM.upgrade() function.
+    /// @dev This function sets up the system to test it as follows:
+    ///      1. Check if the SUPERCHAIN_OPS_ALLOCS_PATH environment variable was set from superchain ops.
+    ///      2. If set, load the state from the given path.
+    ///      3. Read the superchain-registry to get the contract addresses we wish to test from that network.
+    ///      4. If the environment variable wasn't set, deploy the updated OPCM and implementations of the contracts.
+    ///      5. Upgrade the system using the OPCM.upgrade() function if useUpgradedFork is true.
     function run() public {
-        // Read the superchain registry and save the addresses to the Artifacts contract.
-        _readSuperchainRegistry();
+        string memory superchainOpsAllocsPath = vm.envOr("SUPERCHAIN_OPS_ALLOCS_PATH", string(""));
 
-        // Now deploy the updated OPCM and implementations of the contracts
-        _deployNewImplementations();
+        useOpsRepo = bytes(superchainOpsAllocsPath).length > 0;
+        if (useOpsRepo) {
+            console.log("ForkLive: loading state from %s", superchainOpsAllocsPath);
+            // Set the resultant state from the superchain ops repo upgrades.
+            // The allocs are generated when simulating an upgrade task that runs vm.dumpState.
+            // These allocs represent the state of the EVM after the upgrade has been simulated.
+            vm.loadAllocs(superchainOpsAllocsPath);
+            // Next, fetch the addresses from the superchain registry. This function uses a local EVM
+            // to retrieve implementation addresses by reading from proxy addresses provided by the registry.
+            // Setting the allocs first ensures the correct implementation addresses are retrieved.
+            _readSuperchainRegistry();
+        } else {
+            // Read the superchain registry and save the addresses to the Artifacts contract.
+            _readSuperchainRegistry();
+            // Now deploy the updated OPCM and implementations of the contracts.
+            _deployNewImplementations();
+        }
 
         // Now upgrade the contracts (if the config is set to do so)
-        if (cfg.useUpgradedFork()) {
+        if (useOpsRepo) {
+            console.log("ForkLive: using ops repo to upgrade");
+        } else if (cfg.useUpgradedFork()) {
             console.log("ForkLive: upgrading");
             _upgrade();
         }
@@ -151,13 +170,19 @@ contract ForkLive is Deployer {
         address upgrader = proxyAdmin.owner();
         vm.label(upgrader, "ProxyAdmin Owner");
 
-        IOPContractsManager.OpChain[] memory opChains = new IOPContractsManager.OpChain[](1);
-        opChains[0] = IOPContractsManager.OpChain({ systemConfigProxy: systemConfig, proxyAdmin: proxyAdmin });
+        IOPContractsManager.OpChainConfig[] memory opChains = new IOPContractsManager.OpChainConfig[](1);
+        opChains[0] = IOPContractsManager.OpChainConfig({
+            systemConfigProxy: systemConfig,
+            proxyAdmin: proxyAdmin,
+            absolutePrestate: Claim.wrap(bytes32(keccak256("absolutePrestate")))
+        });
 
-        // TODO Migrate from DelegateCaller to a Safe to reduce risk of mocks not properly
-        // reflecting the production system.
+        // Temporarily replace the upgrader with a DelegateCaller so we can test the upgrade,
+        // then reset its code to the original code.
+        bytes memory upgraderCode = address(upgrader).code;
         vm.etch(upgrader, vm.getDeployedCode("test/mocks/Callers.sol:DelegateCaller"));
         DelegateCaller(upgrader).dcForward(address(opcm), abi.encodeCall(IOPContractsManager.upgrade, (opChains)));
+        vm.etch(upgrader, upgraderCode);
 
         console.log("ForkLive: Saving newly deployed contracts");
         // A new ASR and new dispute games were deployed, so we need to update them

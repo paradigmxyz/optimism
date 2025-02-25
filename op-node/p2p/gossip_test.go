@@ -71,7 +71,7 @@ func TestVerifyBlockSignature(t *testing.T) {
 	t.Run("Valid", func(t *testing.T) {
 		runCfg := &testutils.MockRuntimeConfig{P2PSeqAddress: crypto.PubkeyToAddress(secrets.PublicKey)}
 		signer := &PreparedSigner{Signer: NewLocalSigner(secrets)}
-		sig, err := signer.Sign(context.Background(), SigningDomainBlocksV1, cfg.L2ChainID, msg)
+		sig, err := signer.Sign(context.Background(), SigningDomainBlocksV1, eth.ChainIDFromBig(cfg.L2ChainID), opsigner.PayloadHash(msg))
 		require.NoError(t, err)
 		result := verifyBlockSignature(logger, cfg, runCfg, peerId, sig[:], msg)
 		require.Equal(t, pubsub.ValidationAccept, result)
@@ -80,7 +80,7 @@ func TestVerifyBlockSignature(t *testing.T) {
 	t.Run("WrongSigner", func(t *testing.T) {
 		runCfg := &testutils.MockRuntimeConfig{P2PSeqAddress: common.HexToAddress("0x1234")}
 		signer := &PreparedSigner{Signer: NewLocalSigner(secrets)}
-		sig, err := signer.Sign(context.Background(), SigningDomainBlocksV1, cfg.L2ChainID, msg)
+		sig, err := signer.Sign(context.Background(), SigningDomainBlocksV1, eth.ChainIDFromBig(cfg.L2ChainID), opsigner.PayloadHash(msg))
 		require.NoError(t, err)
 		result := verifyBlockSignature(logger, cfg, runCfg, peerId, sig[:], msg)
 		require.Equal(t, pubsub.ValidationReject, result)
@@ -96,7 +96,7 @@ func TestVerifyBlockSignature(t *testing.T) {
 	t.Run("NoSequencer", func(t *testing.T) {
 		runCfg := &testutils.MockRuntimeConfig{}
 		signer := &PreparedSigner{Signer: NewLocalSigner(secrets)}
-		sig, err := signer.Sign(context.Background(), SigningDomainBlocksV1, cfg.L2ChainID, msg)
+		sig, err := signer.Sign(context.Background(), SigningDomainBlocksV1, eth.ChainIDFromBig(cfg.L2ChainID), opsigner.PayloadHash(msg))
 		require.NoError(t, err)
 		result := verifyBlockSignature(logger, cfg, runCfg, peerId, sig[:], msg)
 		require.Equal(t, pubsub.ValidationIgnore, result)
@@ -108,10 +108,11 @@ type mockRemoteSigner struct {
 }
 
 func (t *mockRemoteSigner) SignBlockPayload(args opsigner.BlockPayloadArgs) (hexutil.Bytes, error) {
-	signingHash, err := args.ToSigningHash()
+	msg, err := args.Message()
 	if err != nil {
 		return nil, err
 	}
+	signingHash := msg.ToSigningHash()
 	signature, err := crypto.Sign(signingHash[:], t.priv)
 	if err != nil {
 		return nil, err
@@ -128,13 +129,11 @@ func TestVerifyBlockSignatureWithRemoteSigner(t *testing.T) {
 		"127.0.0.1",
 		0,
 		"test",
-		oprpc.WithAPIs([]rpc.API{
-			{
-				Namespace: "opsigner",
-				Service:   remoteSigner,
-			},
-		}),
 	)
+	server.AddAPI(rpc.API{
+		Namespace: "opsigner",
+		Service:   remoteSigner,
+	})
 
 	require.NoError(t, server.Start())
 	defer func() {
@@ -161,7 +160,7 @@ func TestVerifyBlockSignatureWithRemoteSigner(t *testing.T) {
 		remoteSigner, err := NewRemoteSigner(logger, signerCfg)
 		require.NoError(t, err)
 		signer := &PreparedSigner{Signer: remoteSigner}
-		sig, err := signer.Sign(context.Background(), SigningDomainBlocksV1, cfg.L2ChainID, msg)
+		sig, err := signer.Sign(context.Background(), SigningDomainBlocksV1, eth.ChainIDFromBig(cfg.L2ChainID), opsigner.PayloadHash(msg))
 		require.NoError(t, err)
 		result := verifyBlockSignature(logger, cfg, runCfg, peerId, sig[:], msg)
 		require.Equal(t, pubsub.ValidationAccept, result)
@@ -172,7 +171,7 @@ func TestVerifyBlockSignatureWithRemoteSigner(t *testing.T) {
 		remoteSigner, err := NewRemoteSigner(logger, signerCfg)
 		require.NoError(t, err)
 		signer := &PreparedSigner{Signer: remoteSigner}
-		sig, err := signer.Sign(context.Background(), SigningDomainBlocksV1, cfg.L2ChainID, msg)
+		sig, err := signer.Sign(context.Background(), SigningDomainBlocksV1, eth.ChainIDFromBig(cfg.L2ChainID), opsigner.PayloadHash(msg))
 		require.NoError(t, err)
 		result := verifyBlockSignature(logger, cfg, runCfg, peerId, sig[:], msg)
 		require.Equal(t, pubsub.ValidationReject, result)
@@ -190,7 +189,7 @@ func TestVerifyBlockSignatureWithRemoteSigner(t *testing.T) {
 		remoteSigner, err := NewRemoteSigner(logger, signerCfg)
 		require.NoError(t, err)
 		signer := &PreparedSigner{Signer: remoteSigner}
-		sig, err := signer.Sign(context.Background(), SigningDomainBlocksV1, cfg.L2ChainID, msg)
+		sig, err := signer.Sign(context.Background(), SigningDomainBlocksV1, eth.ChainIDFromBig(cfg.L2ChainID), opsigner.PayloadHash(msg))
 		require.NoError(t, err)
 		result := verifyBlockSignature(logger, cfg, runCfg, peerId, sig[:], msg)
 		require.Equal(t, pubsub.ValidationIgnore, result)
@@ -231,7 +230,7 @@ func createSignedP2Payload(payload MarshalSSZ, signer Signer, l2ChainID *big.Int
 	}
 	data := buf.Bytes()
 	payloadData := data[65:]
-	sig, err := signer.Sign(context.TODO(), SigningDomainBlocksV1, l2ChainID, payloadData)
+	sig, err := signer.Sign(context.TODO(), SigningDomainBlocksV1, eth.ChainIDFromBig(l2ChainID), opsigner.PayloadHash(payloadData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign execution payload with signer: %w", err)
 	}
@@ -242,19 +241,21 @@ func createSignedP2Payload(payload MarshalSSZ, signer Signer, l2ChainID *big.Int
 	return snappy.Encode(nil, data), nil
 }
 
-func createExecutionPayload(w types.Withdrawals, excessGas, gasUsed *uint64) *eth.ExecutionPayload {
+func createExecutionPayload(w types.Withdrawals, withdrawalsRoot *common.Hash, excessGas, gasUsed *uint64) *eth.ExecutionPayload {
 	return &eth.ExecutionPayload{
-		Timestamp:     hexutil.Uint64(time.Now().Unix()),
-		Withdrawals:   &w,
-		ExcessBlobGas: (*eth.Uint64Quantity)(excessGas),
-		BlobGasUsed:   (*eth.Uint64Quantity)(gasUsed),
+		Timestamp:       hexutil.Uint64(time.Now().Unix()),
+		Withdrawals:     &w,
+		WithdrawalsRoot: withdrawalsRoot,
+		ExcessBlobGas:   (*eth.Uint64Quantity)(excessGas),
+		BlobGasUsed:     (*eth.Uint64Quantity)(gasUsed),
 	}
 }
 
-func createEnvelope(h *common.Hash, w types.Withdrawals, excessGas, gasUsed *uint64) *eth.ExecutionPayloadEnvelope {
+func createEnvelope(h *common.Hash, w types.Withdrawals, withdrawalsRoot *common.Hash, excessGas, gasUsed *uint64, requestsHash *common.Hash) *eth.ExecutionPayloadEnvelope {
 	return &eth.ExecutionPayloadEnvelope{
-		ExecutionPayload:      createExecutionPayload(w, excessGas, gasUsed),
+		ExecutionPayload:      createExecutionPayload(w, withdrawalsRoot, excessGas, gasUsed),
 		ParentBeaconBlockRoot: h,
+		RequestsHash:          requestsHash,
 	}
 }
 
@@ -273,9 +274,10 @@ func TestBlockValidator(t *testing.T) {
 
 	v2Validator := BuildBlocksValidator(testlog.Logger(t, log.LevelCrit), cfg, runCfg, eth.BlockV2)
 	v3Validator := BuildBlocksValidator(testlog.Logger(t, log.LevelCrit), cfg, runCfg, eth.BlockV3)
+	v4Validator := BuildBlocksValidator(testlog.Logger(t, log.LevelCrit), cfg, runCfg, eth.BlockV4)
 
 	zero, one := uint64(0), uint64(1)
-	beaconHash := common.HexToHash("0x1234")
+	beaconHash, withdrawalsRoot := common.HexToHash("0x1234"), common.HexToHash("0x9876")
 
 	payloadTests := []struct {
 		name      string
@@ -283,10 +285,10 @@ func TestBlockValidator(t *testing.T) {
 		result    pubsub.ValidationResult
 		payload   *eth.ExecutionPayload
 	}{
-		{"V2Valid", v2Validator, pubsub.ValidationAccept, createExecutionPayload(types.Withdrawals{}, nil, nil)},
-		{"V2NonZeroWithdrawals", v2Validator, pubsub.ValidationReject, createExecutionPayload(types.Withdrawals{&types.Withdrawal{Index: 1, Validator: 1}}, nil, nil)},
-		{"V2NonZeroBlobProperties", v2Validator, pubsub.ValidationReject, createExecutionPayload(types.Withdrawals{}, &zero, &zero)},
-		{"V3RejectExecutionPayload", v3Validator, pubsub.ValidationReject, createExecutionPayload(types.Withdrawals{}, &zero, &zero)},
+		{"V2Valid", v2Validator, pubsub.ValidationAccept, createExecutionPayload(types.Withdrawals{}, nil, nil, nil)},
+		{"V2NonZeroWithdrawals", v2Validator, pubsub.ValidationReject, createExecutionPayload(types.Withdrawals{&types.Withdrawal{Index: 1, Validator: 1}}, nil, nil, nil)},
+		{"V2NonZeroBlobProperties", v2Validator, pubsub.ValidationReject, createExecutionPayload(types.Withdrawals{}, nil, &zero, &zero)},
+		{"V3RejectExecutionPayload", v3Validator, pubsub.ValidationReject, createExecutionPayload(types.Withdrawals{}, nil, &zero, &zero)},
 	}
 
 	for _, tt := range payloadTests {
@@ -308,10 +310,12 @@ func TestBlockValidator(t *testing.T) {
 		result    pubsub.ValidationResult
 		payload   *eth.ExecutionPayloadEnvelope
 	}{
-		{"V3RejectNonZeroExcessGas", v3Validator, pubsub.ValidationReject, createEnvelope(&beaconHash, types.Withdrawals{}, &one, &zero)},
-		{"V3RejectNonZeroBlobGasUsed", v3Validator, pubsub.ValidationReject, createEnvelope(&beaconHash, types.Withdrawals{}, &zero, &one)},
-		{"V3RejectNonZeroBlobGasUsed", v3Validator, pubsub.ValidationReject, createEnvelope(&beaconHash, types.Withdrawals{}, &zero, &one)},
-		{"V3Valid", v3Validator, pubsub.ValidationAccept, createEnvelope(&beaconHash, types.Withdrawals{}, &zero, &zero)},
+		{"V3RejectNonZeroExcessGas", v3Validator, pubsub.ValidationReject, createEnvelope(&beaconHash, types.Withdrawals{}, nil, &one, &zero, nil)},
+		{"V3RejectNonZeroBlobGasUsed", v3Validator, pubsub.ValidationReject, createEnvelope(&beaconHash, types.Withdrawals{}, nil, &zero, &one, nil)},
+		{"V3Valid", v3Validator, pubsub.ValidationAccept, createEnvelope(&beaconHash, types.Withdrawals{}, nil, &zero, &zero, nil)},
+		{"V4Valid", v4Validator, pubsub.ValidationAccept, createEnvelope(&beaconHash, types.Withdrawals{}, &withdrawalsRoot, &zero, &zero, &types.EmptyRequestsHash)},
+		{"V4RejectNoWithdrawalRoot", v4Validator, pubsub.ValidationReject, createEnvelope(&beaconHash, types.Withdrawals{}, nil, &zero, &zero, &types.EmptyRequestsHash)},
+		{"V4RejectNoRequestsHash", v4Validator, pubsub.ValidationReject, createEnvelope(&beaconHash, types.Withdrawals{}, &common.Hash{}, &zero, &zero, nil)},
 	}
 
 	for _, tt := range envelopeTests {

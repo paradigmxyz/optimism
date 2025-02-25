@@ -10,9 +10,9 @@ import (
 	"github.com/ethereum-optimism/optimism/op-challenger/game/fault/trace/vm"
 	"github.com/ethereum-optimism/optimism/op-challenger/game/fault/types"
 	"github.com/ethereum-optimism/optimism/op-service/flags"
-	"github.com/ethereum-optimism/superchain-registry/superchain"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/superchain"
 	"github.com/urfave/cli/v2"
 
 	"github.com/ethereum-optimism/optimism/op-challenger/config"
@@ -92,6 +92,11 @@ var (
 		Name:    "l2-eth-rpc",
 		Usage:   "URLs of L2 JSON-RPC endpoints to use (eth and debug namespace required)",
 		EnvVars: prefixEnvVars("L2_ETH_RPC"),
+	}
+	L2ExperimentalEthRpcFlag = &cli.StringFlag{
+		Name:    "l2-experimental-eth-rpc",
+		Usage:   "L2 Address of L2 JSON-RPC endpoint to use (eth and debug namespace required with execution witness support)  (cannon/asterisc trace type only)",
+		EnvVars: prefixEnvVars("L2_EXPERIMENTAL_ETH_RPC"),
 	}
 	MaxPendingTransactionsFlag = &cli.Uint64Flag{
 		Name:    "max-pending-tx",
@@ -241,6 +246,7 @@ var optionalFlags = []cli.Flag{
 	MaxConcurrencyFlag,
 	SupervisorRpcFlag,
 	L2EthRpcFlag,
+	L2ExperimentalEthRpcFlag,
 	MaxPendingTransactionsFlag,
 	HTTPPollInterval,
 	AdditionalBondClaimants,
@@ -401,7 +407,7 @@ func CheckRequired(ctx *cli.Context, traceTypes []types.TraceType) error {
 			if err := CheckAsteriscKonaFlags(ctx); err != nil {
 				return err
 			}
-		case types.TraceTypeSuperCannon:
+		case types.TraceTypeSuperCannon, types.TraceTypeSuperPermissioned:
 			if err := CheckSuperCannonFlags(ctx); err != nil {
 				return err
 			}
@@ -446,23 +452,21 @@ func FactoryAddress(ctx *cli.Context) (common.Address, error) {
 	if len(networks) == 0 {
 		return common.Address{}, fmt.Errorf("flag %v or %v is required", FactoryAddressFlag.Name, flags.NetworkFlagName)
 	}
+
 	network := networks[0]
 	chainCfg := chaincfg.ChainByName(network)
 	if chainCfg == nil {
 		var opts []string
-		for _, cfg := range superchain.OPChains {
-			opts = append(opts, cfg.Chain+"-"+cfg.Superchain)
+		for _, cfg := range superchain.Chains {
+			opts = append(opts, cfg.Name+"-"+cfg.Network)
 		}
 		return common.Address{}, fmt.Errorf("unknown chain: %v (Valid options: %v)", network, strings.Join(opts, ", "))
 	}
-	addrs, ok := superchain.Addresses[chainCfg.ChainID]
-	if !ok {
-		return common.Address{}, fmt.Errorf("no addresses available for chain %v", network)
-	}
-	if addrs.DisputeGameFactoryProxy == (superchain.Address{}) {
+	addrs := chainCfg.Addresses
+	if addrs.DisputeGameFactoryProxy == nil {
 		return common.Address{}, fmt.Errorf("dispute factory proxy not available for chain %v", network)
 	}
-	return common.Address(addrs.DisputeGameFactoryProxy), nil
+	return *addrs.DisputeGameFactoryProxy, nil
 }
 
 // NewConfigFromCLI parses the Config from the provided flags or environment variables.
@@ -535,6 +539,7 @@ func NewConfigFromCLI(ctx *cli.Context, logger log.Logger) (*config.Config, erro
 	l1EthRpc := ctx.String(L1EthRpcFlag.Name)
 	l1Beacon := ctx.String(L1BeaconFlag.Name)
 	l2Rpcs := ctx.StringSlice(L2EthRpcFlag.Name)
+	l2Experimental := ctx.String(L2ExperimentalEthRpcFlag.Name)
 	return &config.Config{
 		// Required Flags
 		L1EthRpc:                l1EthRpc,
@@ -555,6 +560,7 @@ func NewConfigFromCLI(ctx *cli.Context, logger log.Logger) (*config.Config, erro
 			L1:                l1EthRpc,
 			L1Beacon:          l1Beacon,
 			L2s:               l2Rpcs,
+			L2Experimental:    l2Experimental,
 			VmBin:             ctx.String(CannonBinFlag.Name),
 			Server:            ctx.String(CannonServerFlag.Name),
 			Networks:          networks,
@@ -574,6 +580,7 @@ func NewConfigFromCLI(ctx *cli.Context, logger log.Logger) (*config.Config, erro
 			L1:                l1EthRpc,
 			L1Beacon:          l1Beacon,
 			L2s:               l2Rpcs,
+			L2Experimental:    l2Experimental,
 			VmBin:             ctx.String(AsteriscBinFlag.Name),
 			Server:            ctx.String(AsteriscServerFlag.Name),
 			Networks:          networks,
@@ -590,6 +597,7 @@ func NewConfigFromCLI(ctx *cli.Context, logger log.Logger) (*config.Config, erro
 			L1:                l1EthRpc,
 			L1Beacon:          l1Beacon,
 			L2s:               l2Rpcs,
+			L2Experimental:    l2Experimental,
 			VmBin:             ctx.String(AsteriscBinFlag.Name),
 			Server:            ctx.String(AsteriscKonaServerFlag.Name),
 			Networks:          networks,

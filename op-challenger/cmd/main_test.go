@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum-optimism/superchain-registry/superchain"
+	"github.com/ethereum/go-ethereum/superchain"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -52,6 +52,14 @@ func TestLogLevel(t *testing.T) {
 	}
 }
 
+func TestL2Experimental(t *testing.T) {
+	t.Run("Valid", func(t *testing.T) {
+		url := "http://example.com:8888"
+		cfg := configForArgs(t, addRequiredArgs(types.TraceTypeAlphabet, "--l2-experimental-eth-rpc="+url))
+		require.Equal(t, url, cfg.Cannon.L2Experimental)
+	})
+}
+
 func TestDefaultCLIOptionsMatchDefaultConfig(t *testing.T) {
 	cfg := configForArgs(t, addRequiredArgs(types.TraceTypeAlphabet))
 	defaultCfg := config.NewConfig(common.HexToAddress(gameFactoryAddressValue), l1EthRpc, l1Beacon, rollupRpc, l2EthRpc, datadir, types.TraceTypeAlphabet)
@@ -92,10 +100,13 @@ func TestOpSupervisor(t *testing.T) {
 	t.Run("RequiredForSuperCannon", func(t *testing.T) {
 		verifyArgsInvalid(t, "flag supervisor-rpc is required", addRequiredArgsExcept(types.TraceTypeSuperCannon, "--supervisor-rpc"))
 	})
+	t.Run("RequiredForSuperPermissioned", func(t *testing.T) {
+		verifyArgsInvalid(t, "flag supervisor-rpc is required", addRequiredArgsExcept(types.TraceTypeSuperPermissioned, "--supervisor-rpc"))
+	})
 
 	for _, traceType := range types.TraceTypes {
 		traceType := traceType
-		if traceType == types.TraceTypeSuperCannon {
+		if traceType == types.TraceTypeSuperCannon || traceType == types.TraceTypeSuperPermissioned {
 			continue
 		}
 
@@ -104,9 +115,15 @@ func TestOpSupervisor(t *testing.T) {
 		})
 	}
 
-	t.Run("Valid", func(t *testing.T) {
+	t.Run("Valid-SuperCannon", func(t *testing.T) {
 		url := "http://localhost/supervisor"
 		cfg := configForArgs(t, addRequiredArgsExcept(types.TraceTypeSuperCannon, "--supervisor-rpc", "--supervisor-rpc", url))
+		require.Equal(t, url, cfg.SupervisorRPC)
+	})
+
+	t.Run("Valid-SuperPermissioned", func(t *testing.T) {
+		url := "http://localhost/supervisor"
+		cfg := configForArgs(t, addRequiredArgsExcept(types.TraceTypeSuperPermissioned, "--supervisor-rpc", "--supervisor-rpc", url))
 		require.Equal(t, url, cfg.SupervisorRPC)
 	})
 }
@@ -197,8 +214,12 @@ func TestGameFactoryAddress(t *testing.T) {
 func TestNetwork(t *testing.T) {
 	t.Run("Valid", func(t *testing.T) {
 		opSepoliaChainId := uint64(11155420)
+		opSepolia, err := superchain.GetChain(opSepoliaChainId)
+		require.NoError(t, err)
+		opSepoliaCfg, err := opSepolia.Config()
+		require.NoError(t, err)
 		cfg := configForArgs(t, addRequiredArgsExcept(types.TraceTypeAlphabet, "--game-factory-address", "--network=op-sepolia"))
-		require.EqualValues(t, superchain.Addresses[opSepoliaChainId].DisputeGameFactoryProxy, cfg.GameFactoryAddress)
+		require.EqualValues(t, *opSepoliaCfg.Addresses.DisputeGameFactoryProxy, cfg.GameFactoryAddress)
 	})
 
 	t.Run("UnknownNetwork", func(t *testing.T) {
@@ -600,7 +621,7 @@ func TestAlphabetRequiredArgs(t *testing.T) {
 }
 
 func TestCannonRequiredArgs(t *testing.T) {
-	for _, traceType := range []types.TraceType{types.TraceTypeCannon, types.TraceTypePermissioned, types.TraceTypeSuperCannon} {
+	for _, traceType := range []types.TraceType{types.TraceTypeCannon, types.TraceTypePermissioned, types.TraceTypeSuperCannon, types.TraceTypeSuperPermissioned} {
 		traceType := traceType
 		t.Run(fmt.Sprintf("TestCannonBin-%v", traceType), func(t *testing.T) {
 			t.Run("NotRequiredForAlphabetTrace", func(t *testing.T) {
@@ -835,7 +856,7 @@ func TestRollupRpc(t *testing.T) {
 	for _, traceType := range types.TraceTypes {
 		traceType := traceType
 
-		if traceType == types.TraceTypeSuperCannon {
+		if traceType == types.TraceTypeSuperCannon || traceType == types.TraceTypeSuperPermissioned {
 			t.Run(fmt.Sprintf("NotRequiredFor-%v", traceType), func(t *testing.T) {
 				configForArgs(t, addRequiredArgsExcept(traceType, "--rollup-rpc"))
 			})
@@ -1020,7 +1041,7 @@ func requiredArgs(traceType types.TraceType) map[string]string {
 		addRequiredAsteriscArgs(args)
 	case types.TraceTypeAsteriscKona:
 		addRequiredAsteriscKonaArgs(args)
-	case types.TraceTypeSuperCannon:
+	case types.TraceTypeSuperCannon, types.TraceTypeSuperPermissioned:
 		addRequiredSuperCannonArgs(args)
 	case types.TraceTypeAlphabet, types.TraceTypeFast:
 		addRequiredOutputRootArgs(args)

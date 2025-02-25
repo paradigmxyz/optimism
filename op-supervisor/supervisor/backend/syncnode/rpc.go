@@ -81,6 +81,12 @@ func (rs *RPCSyncNode) PendingOutputV0AtTimestamp(ctx context.Context, timestamp
 	return out, err
 }
 
+func (rs *RPCSyncNode) L2BlockRefByTimestamp(ctx context.Context, timestamp uint64) (eth.L2BlockRef, error) {
+	var out eth.L2BlockRef
+	err := rs.cl.CallContext(ctx, &out, "interop_l2BlockRefByTimestamp", timestamp)
+	return out, err
+}
+
 func (rs *RPCSyncNode) String() string {
 	return rs.name
 }
@@ -108,12 +114,16 @@ func (rs *RPCSyncNode) UpdateCrossUnsafe(ctx context.Context, id eth.BlockID) er
 	return rs.cl.CallContext(ctx, nil, "interop_updateCrossUnsafe", id)
 }
 
-func (rs *RPCSyncNode) UpdateCrossSafe(ctx context.Context, derived eth.BlockID, derivedFrom eth.BlockID) error {
-	return rs.cl.CallContext(ctx, nil, "interop_updateCrossSafe", derived, derivedFrom)
+func (rs *RPCSyncNode) UpdateCrossSafe(ctx context.Context, derived eth.BlockID, source eth.BlockID) error {
+	return rs.cl.CallContext(ctx, nil, "interop_updateCrossSafe", derived, source)
 }
 
 func (rs *RPCSyncNode) UpdateFinalized(ctx context.Context, id eth.BlockID) error {
 	return rs.cl.CallContext(ctx, nil, "interop_updateFinalized", id)
+}
+
+func (rs *RPCSyncNode) InvalidateBlock(ctx context.Context, seal types.BlockSeal) error {
+	return rs.cl.CallContext(ctx, nil, "interop_invalidateBlock", seal)
 }
 
 func (rs *RPCSyncNode) Reset(ctx context.Context, unsafe, safe, finalized eth.BlockID) error {

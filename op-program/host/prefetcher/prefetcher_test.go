@@ -630,12 +630,12 @@ func TestFetchL2BlockData(t *testing.T) {
 		l2Client := l2Clients.sources[defaultChainID]
 		rng := rand.New(rand.NewSource(123))
 		block, _ := testutils.RandomBlock(rng, 10)
-		disputedBlockHash := common.Hash{0xab}
+		disputedBlock, _ := testutils.RandomBlock(rng, 10)
 
 		isCanonical := clientErrs[len(clientErrs)-1] == nil
 
 		for _, clientErr := range clientErrs {
-			l2Client.ExpectInfoAndTxsByHash(disputedBlockHash, eth.BlockToInfo(nil), nil, clientErr)
+			l2Client.ExpectInfoAndTxsByHash(disputedBlock.Hash(), eth.BlockToInfo(nil), nil, clientErr)
 		}
 		if !isCanonical {
 			l2Client.ExpectInfoAndTxsByHash(block.Hash(), eth.BlockToInfo(block), block.Transactions(), nil)
@@ -645,9 +645,17 @@ func TestFetchL2BlockData(t *testing.T) {
 		prefetcher.executor = &mockExecutor{}
 		hint := l2.L2BlockDataHint{
 			AgreedBlockHash: block.Hash(),
-			BlockHash:       disputedBlockHash,
+			BlockHash:       disputedBlock.Hash(),
 			ChainID:         chainID,
 		}.Hint()
+
+		if !isCanonical {
+			// Simulate program execution by writing block preimage to the kv store
+			disputedBlockRLP, err := rlp.EncodeToBytes(disputedBlock.Header())
+			require.NoError(t, err)
+			err = prefetcher.kvStore.Put(preimage.Keccak256Key(disputedBlock.Hash()).PreimageKey(), disputedBlockRLP)
+			require.NoError(t, err)
+		}
 
 		require.NoError(t, prefetcher.Hint(hint))
 		if isCanonical {
@@ -658,7 +666,7 @@ func TestFetchL2BlockData(t *testing.T) {
 			require.Equal(t, prefetcher.executor.(*mockExecutor).chainID, chainID)
 		}
 
-		data, err := prefetcher.kvStore.Get(BlockDataKey(disputedBlockHash).Key())
+		data, err := prefetcher.kvStore.Get(BlockDataKey(disputedBlock.Hash()).Key())
 		require.NoError(t, err)
 		require.Equal(t, data, []byte{1})
 
@@ -763,6 +771,34 @@ func TestBadHints(t *testing.T) {
 	})
 }
 
+func TestFallbackWhenExperimentalFails(t *testing.T) {
+	rng := rand.New(rand.NewSource(123))
+	node := testutils.RandomData(rng, 30)
+	hash := crypto.Keccak256Hash(node)
+
+	key := preimage.Keccak256Key(hash)
+
+	_, l1Source, l1BlobSource, l2Cls, kv := createPrefetcher(t)
+
+	cl := l2Cls.sources[defaultChainID]
+	cl.experimental = true
+
+	l2Sources := &l2Clients{sources: make(map[eth.ChainID]*l2Client)}
+	l2Sources.sources[defaultChainID] = cl
+
+	prefetcher := NewPrefetcher(testlog.Logger(t, log.LevelInfo), l1Source, l1BlobSource, defaultChainID, l2Sources, kv, nil, common.Hash{}, nil)
+
+	defer l2Cls.sources[defaultChainID].AssertExpectations(t)
+	l2Cls.sources[defaultChainID].ExpectNodeByHash(hash, node, nil)
+	_ = prefetcher.Hint(l2.PayloadWitnessHint{ParentBlockHash: common.Hash{0x1}, PayloadAttributes: &eth.PayloadAttributes{}}.Hint())
+
+	// first should fail, but should succeed after retry
+	_ = prefetcher.Hint(l2.StateNodeHint{Hash: hash, ChainID: defaultChainID}.Hint())
+	result, err := prefetcher.GetPreimage(context.Background(), key.PreimageKey())
+	require.NoError(t, err)
+	require.Equal(t, node, result)
+}
+
 func TestRetryWhenNotAvailableAfterPrefetching(t *testing.T) {
 	rng := rand.New(rand.NewSource(123))
 	node := testutils.RandomData(rng, 30)
@@ -820,7 +856,8 @@ func (l *l2Clients) ForChainIDWithoutRetries(id eth.ChainID) (hostTypes.L2Source
 type l2Client struct {
 	*testutils.MockL2Client
 	*testutils.MockDebugClient
-	rollupCfg *rollup.Config
+	rollupCfg    *rollup.Config
+	experimental bool
 }
 
 func (m *l2Client) RollupConfig() *rollup.Config {
@@ -828,7 +865,11 @@ func (m *l2Client) RollupConfig() *rollup.Config {
 }
 
 func (m *l2Client) ExperimentalEnabled() bool {
-	panic("implement me")
+	return m.experimental
+}
+
+func (m *l2Client) PayloadExecutionWitness(ctx context.Context, parentHash common.Hash, payloadAttributes eth.PayloadAttributes) (*eth.ExecutionWitness, error) {
+	return nil, hostcommon.ErrExperimentalPrefetchFailed
 }
 
 func (m *l2Client) OutputByRoot(ctx context.Context, blockHash common.Hash) (eth.Output, error) {
@@ -989,7 +1030,7 @@ type mockExecutor struct {
 }
 
 func (m *mockExecutor) RunProgram(
-	ctx context.Context, prefetcher hostcommon.Prefetcher, blockNumber uint64, chainID eth.ChainID) error {
+	ctx context.Context, prefetcher hostcommon.Prefetcher, blockNumber uint64, chainID eth.ChainID, db l2.KeyValueStore) error {
 	m.invoked = true
 	m.blockNumber = blockNumber
 	m.chainID = chainID

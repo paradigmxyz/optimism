@@ -138,8 +138,8 @@ var (
 	}
 	ActiveSequencerCheckDurationFlag = &cli.DurationFlag{
 		Name:    "active-sequencer-check-duration",
-		Usage:   "The duration between checks to determine the active sequencer endpoint. ",
-		Value:   2 * time.Minute,
+		Usage:   "The duration between checks to determine the active sequencer endpoint.",
+		Value:   5 * time.Second,
 		EnvVars: prefixEnvVars("ACTIVE_SEQUENCER_CHECK_DURATION"),
 	}
 	CheckRecentTxsDepthFlag = &cli.IntFlag{
@@ -156,15 +156,9 @@ var (
 		Value:   false,
 		EnvVars: prefixEnvVars("WAIT_NODE_SYNC"),
 	}
-	ThrottleIntervalFlag = &cli.DurationFlag{
-		Name:    "throttle-interval",
-		Usage:   "Interval between potential DA throttling actions. Zero disables throttling.",
-		Value:   2 * time.Second,
-		EnvVars: prefixEnvVars("THROTTLE_INTERVAL"),
-	}
 	ThrottleThresholdFlag = &cli.IntFlag{
 		Name:    "throttle-threshold",
-		Usage:   "The threshold on pending-blocks-bytes-current beyond which the batcher will instruct the block builder to start throttling transactions with larger DA demands",
+		Usage:   "The threshold on pending-blocks-bytes-current beyond which the batcher will instruct the block builder to start throttling transactions with larger DA demands. Zero disables throttling.",
 		Value:   1_000_000,
 		EnvVars: prefixEnvVars("THROTTLE_THRESHOLD"),
 	}
@@ -215,7 +209,6 @@ var optionalFlags = []cli.Flag{
 	ActiveSequencerCheckDurationFlag,
 	CompressionAlgoFlag,
 	ThrottleThresholdFlag,
-	ThrottleIntervalFlag,
 	ThrottleTxSizeFlag,
 	ThrottleBlockSizeFlag,
 	ThrottleAlwaysBlockSizeFlag,

@@ -10,7 +10,7 @@ import { IDelayedWETH } from "interfaces/dispute/IDelayedWETH.sol";
 import { IAnchorStateRegistry } from "interfaces/dispute/IAnchorStateRegistry.sol";
 import { IAddressManager } from "interfaces/legacy/IAddressManager.sol";
 import { IProxyAdmin } from "interfaces/universal/IProxyAdmin.sol";
-import { IDelayedWETH } from "interfaces/dispute/IDelayedWETH.sol";
+import { IDisputeGame } from "interfaces/dispute/IDisputeGame.sol";
 import { IDisputeGameFactory } from "interfaces/dispute/IDisputeGameFactory.sol";
 import { IFaultDisputeGame } from "interfaces/dispute/IFaultDisputeGame.sol";
 import { IPermissionedDisputeGame } from "interfaces/dispute/IPermissionedDisputeGame.sol";
@@ -94,6 +94,8 @@ interface IOPContractsManager {
 
     /// @notice The latest implementation contracts for the OP Stack.
     struct Implementations {
+        address superchainConfigImpl;
+        address protocolVersionsImpl;
         address l1ERC721BridgeImpl;
         address optimismPortalImpl;
         address systemConfigImpl;
@@ -107,9 +109,10 @@ interface IOPContractsManager {
     }
 
     /// @notice The input required to identify a chain for upgrading.
-    struct OpChain {
+    struct OpChainConfig {
         ISystemConfig systemConfigProxy;
         IProxyAdmin proxyAdmin;
+        Claim absolutePrestate;
     }
 
     struct AddGameInput {
@@ -143,6 +146,9 @@ interface IOPContractsManager {
     /// @notice Address of the ProtocolVersions contract shared by all chains.
     function protocolVersions() external view returns (IProtocolVersions);
 
+    /// @notice Address of the ProxyAdmin contract shared by all chains.
+    function superchainProxyAdmin() external view returns (IProxyAdmin);
+
     /// @notice L1 smart contracts release deployed by this version of OPCM. This is used in opcm to signal which
     /// version of the L1 smart contracts is deployed. It takes the format of `op-contracts/vX.Y.Z`.
     function l1ContractsRelease() external view returns (string memory);
@@ -159,6 +165,13 @@ interface IOPContractsManager {
     /// @param systemConfig Address of the chain's SystemConfig contract
     /// @param upgrader Address that initiated the upgrade
     event Upgraded(uint256 indexed l2ChainId, ISystemConfig indexed systemConfig, address indexed upgrader);
+
+    /// @notice Emitted when a new game type is added to a chain
+    /// @param l2ChainId Chain ID of the chain
+    /// @param gameType Type of the game being added
+    /// @param newDisputeGame Address of the deployed dispute game
+    /// @param oldDisputeGame Address of the old dispute game
+    event GameTypeAdded(uint256 indexed l2ChainId, GameType indexed gameType, IDisputeGame newDisputeGame, IDisputeGame oldDisputeGame);
 
     // -------- Errors --------
 
@@ -202,11 +215,16 @@ interface IOPContractsManager {
     /// @notice Thrown when the SuperchainConfig of the chain does not match the SuperchainConfig of this OPCM.
     error SuperchainConfigMismatch(ISystemConfig systemConfig);
 
+    error SuperchainProxyAdminMismatch();
+
+    error PrestateNotSet();
+
     // -------- Methods --------
 
     function __constructor__(
         ISuperchainConfig _superchainConfig,
         IProtocolVersions _protocolVersions,
+        IProxyAdmin _superchainProxyAdmin,
         string memory _l1ContractsRelease,
         Blueprints memory _blueprints,
         Implementations memory _implementations,
@@ -216,10 +234,9 @@ interface IOPContractsManager {
 
     function deploy(DeployInput calldata _input) external returns (DeployOutput memory);
 
-    /// @notice Upgrades a set of chains to the latest implementation contracts
-    /// @param _opChains Array of OpChain structs, one per chain to upgrade
-    /// @dev This function is intended to be called via DELEGATECALL from the Upgrade Controller Safe
-    function upgrade(OpChain[] memory _opChains) external;
+    /// @notice Upgrades the implementation of all proxies in the specified chains
+    /// @param _opChainConfigs The chains to upgrade
+    function upgrade(OpChainConfig[] memory _opChainConfigs) external;
 
     /// @notice addGameType deploys a new dispute game and links it to the DisputeGameFactory. The inputted _gameConfigs
     /// must be added in ascending GameType order.

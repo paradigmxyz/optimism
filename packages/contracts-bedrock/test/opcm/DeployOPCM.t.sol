@@ -6,6 +6,7 @@ import { DeployOPCM, DeployOPCMInput, DeployOPCMOutput } from "scripts/deploy/De
 import { IOPContractsManager } from "interfaces/L1/IOPContractsManager.sol";
 import { ISuperchainConfig } from "interfaces/L1/ISuperchainConfig.sol";
 import { IProtocolVersions } from "interfaces/L1/IProtocolVersions.sol";
+import { IProxyAdmin } from "interfaces/universal/IProxyAdmin.sol";
 
 contract DeployOPCMInput_Test is Test {
     DeployOPCMInput dii;
@@ -82,6 +83,8 @@ contract DeployOPCMInput_Test is Test {
     function test_set_part1_succeeds() public {
         ISuperchainConfig superchainConfig = ISuperchainConfig(makeAddr("superchainConfig"));
         IProtocolVersions protocolVersions = IProtocolVersions(makeAddr("protocolVersions"));
+        address superchainConfigImpl = makeAddr("superchainConfigImpl");
+        address protocolVersionsImpl = makeAddr("protocolVersionsImpl");
         address upgradeController = makeAddr("upgradeController");
         address addressManagerBlueprint = makeAddr("addressManagerBlueprint");
         address proxyBlueprint = makeAddr("proxyBlueprint");
@@ -93,6 +96,8 @@ contract DeployOPCMInput_Test is Test {
 
         dii.set(dii.superchainConfig.selector, address(superchainConfig));
         dii.set(dii.protocolVersions.selector, address(protocolVersions));
+        dii.set(dii.superchainConfigImpl.selector, superchainConfigImpl);
+        dii.set(dii.protocolVersionsImpl.selector, protocolVersionsImpl);
         dii.set(dii.l1ContractsRelease.selector, release);
         dii.set(dii.upgradeController.selector, upgradeController);
         dii.set(dii.addressManagerBlueprint.selector, addressManagerBlueprint);
@@ -210,6 +215,9 @@ contract DeployOPCMTest is Test {
 
     ISuperchainConfig superchainConfigProxy = ISuperchainConfig(makeAddr("superchainConfigProxy"));
     IProtocolVersions protocolVersionsProxy = IProtocolVersions(makeAddr("protocolVersionsProxy"));
+    IProxyAdmin superchainProxyAdmin = IProxyAdmin(makeAddr("superchainProxyAdmin"));
+    address superchainConfigImpl = makeAddr("superchainConfigImpl");
+    address protocolVersionsImpl = makeAddr("protocolVersionsImpl");
     address upgradeController = makeAddr("upgradeController");
 
     function setUp() public virtual {
@@ -220,6 +228,9 @@ contract DeployOPCMTest is Test {
     function test_run_succeeds() public {
         doi.set(doi.superchainConfig.selector, address(superchainConfigProxy));
         doi.set(doi.protocolVersions.selector, address(protocolVersionsProxy));
+        doi.set(doi.superchainProxyAdmin.selector, address(superchainProxyAdmin));
+        doi.set(doi.superchainConfigImpl.selector, address(superchainConfigImpl));
+        doi.set(doi.protocolVersionsImpl.selector, address(protocolVersionsImpl));
         doi.set(doi.l1ContractsRelease.selector, "1.0.0");
         doi.set(doi.upgradeController.selector, upgradeController);
 

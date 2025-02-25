@@ -11,10 +11,12 @@ import { DeployUtils } from "scripts/libraries/DeployUtils.sol";
 import { ISuperchainConfig } from "interfaces/L1/ISuperchainConfig.sol";
 import { IProtocolVersions } from "interfaces/L1/IProtocolVersions.sol";
 import { IOPContractsManager } from "interfaces/L1/IOPContractsManager.sol";
+import { IProxyAdmin } from "interfaces/universal/IProxyAdmin.sol";
 
 contract DeployOPCMInput is BaseDeployIO {
     ISuperchainConfig internal _superchainConfig;
     IProtocolVersions internal _protocolVersions;
+    IProxyAdmin internal _superchainProxyAdmin;
     string internal _l1ContractsRelease;
     address internal _upgradeController;
 
@@ -26,6 +28,8 @@ contract DeployOPCMInput is BaseDeployIO {
     address internal _permissionedDisputeGame1Blueprint;
     address internal _permissionedDisputeGame2Blueprint;
 
+    address internal _superchainConfigImpl;
+    address internal _protocolVersionsImpl;
     address internal _l1ERC721BridgeImpl;
     address internal _optimismPortalImpl;
     address internal _systemConfigImpl;
@@ -41,8 +45,12 @@ contract DeployOPCMInput is BaseDeployIO {
     function set(bytes4 _sel, address _addr) public {
         require(_addr != address(0), "DeployOPCMInput: cannot set zero address");
 
+        // forgefmt: disable-start
         if (_sel == this.superchainConfig.selector) _superchainConfig = ISuperchainConfig(_addr);
         else if (_sel == this.protocolVersions.selector) _protocolVersions = IProtocolVersions(_addr);
+        else if (_sel == this.superchainProxyAdmin.selector) _superchainProxyAdmin = IProxyAdmin(_addr);
+        else if (_sel == this.superchainConfigImpl.selector) _superchainConfigImpl = _addr;
+        else if (_sel == this.protocolVersionsImpl.selector) _protocolVersionsImpl = _addr;
         else if (_sel == this.upgradeController.selector) _upgradeController = _addr;
         else if (_sel == this.addressManagerBlueprint.selector) _addressManagerBlueprint = _addr;
         else if (_sel == this.proxyBlueprint.selector) _proxyBlueprint = _addr;
@@ -62,6 +70,7 @@ contract DeployOPCMInput is BaseDeployIO {
         else if (_sel == this.delayedWETHImpl.selector) _delayedWETHImpl = _addr;
         else if (_sel == this.mipsImpl.selector) _mipsImpl = _addr;
         else revert("DeployOPCMInput: unknown selector");
+        // forgefmt: disable-end
     }
 
     // Setter for string type
@@ -80,6 +89,11 @@ contract DeployOPCMInput is BaseDeployIO {
     function protocolVersions() public view returns (IProtocolVersions) {
         require(address(_protocolVersions) != address(0), "DeployOPCMInput: not set");
         return _protocolVersions;
+    }
+
+    function superchainProxyAdmin() public view returns (IProxyAdmin) {
+        require(address(_superchainProxyAdmin) != address(0), "DeployOPCMInput: not set");
+        return _superchainProxyAdmin;
     }
 
     function l1ContractsRelease() public view returns (string memory) {
@@ -167,6 +181,16 @@ contract DeployOPCMInput is BaseDeployIO {
         return _anchorStateRegistryImpl;
     }
 
+    function superchainConfigImpl() public view returns (address) {
+        require(_superchainConfigImpl != address(0), "DeployOPCMInput: not set");
+        return _superchainConfigImpl;
+    }
+
+    function protocolVersionsImpl() public view returns (address) {
+        require(_protocolVersionsImpl != address(0), "DeployOPCMInput: not set");
+        return _protocolVersionsImpl;
+    }
+
     function delayedWETHImpl() public view returns (address) {
         require(_delayedWETHImpl != address(0), "DeployOPCMInput: not set");
         return _delayedWETHImpl;
@@ -209,6 +233,8 @@ contract DeployOPCM is Script {
             permissionlessDisputeGame2: address(0)
         });
         IOPContractsManager.Implementations memory implementations = IOPContractsManager.Implementations({
+            superchainConfigImpl: address(_doi.superchainConfigImpl()),
+            protocolVersionsImpl: address(_doi.protocolVersionsImpl()),
             l1ERC721BridgeImpl: address(_doi.l1ERC721BridgeImpl()),
             optimismPortalImpl: address(_doi.optimismPortalImpl()),
             systemConfigImpl: address(_doi.systemConfigImpl()),
@@ -224,6 +250,7 @@ contract DeployOPCM is Script {
         IOPContractsManager opcm_ = deployOPCM(
             _doi.superchainConfig(),
             _doi.protocolVersions(),
+            _doi.superchainProxyAdmin(),
             blueprints,
             implementations,
             _doi.l1ContractsRelease(),
@@ -237,6 +264,7 @@ contract DeployOPCM is Script {
     function deployOPCM(
         ISuperchainConfig _superchainConfig,
         IProtocolVersions _protocolVersions,
+        IProxyAdmin _superchainProxyAdmin,
         IOPContractsManager.Blueprints memory _blueprints,
         IOPContractsManager.Implementations memory _implementations,
         string memory _l1ContractsRelease,
@@ -245,7 +273,6 @@ contract DeployOPCM is Script {
         public
         returns (IOPContractsManager opcm_)
     {
-        vm.broadcast(msg.sender);
         opcm_ = IOPContractsManager(
             DeployUtils.createDeterministic({
                 _name: "OPContractsManager",
@@ -255,6 +282,7 @@ contract DeployOPCM is Script {
                         (
                             _superchainConfig,
                             _protocolVersions,
+                            _superchainProxyAdmin,
                             _l1ContractsRelease,
                             _blueprints,
                             _implementations,

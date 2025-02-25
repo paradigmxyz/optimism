@@ -114,6 +114,9 @@ func NewL2Genesis(config *DeployConfig, l1StartHeader *types.Header) (*core.Gene
 	if optimismChainConfig.IsHolocene(genesis.Timestamp) {
 		genesis.ExtraData = HoloceneExtraData
 	}
+	if optimismChainConfig.IsIsthmus(genesis.Timestamp) {
+		genesis.Alloc[params.HistoryStorageAddress] = types.Account{Nonce: 1, Code: params.HistoryStorageCode, Balance: common.Big0}
+	}
 
 	return genesis, nil
 }
@@ -167,6 +170,10 @@ func NewL1Genesis(config *DeployConfig) (*core.Genesis, error) {
 	if config.L1CancunTimeOffset != nil {
 		cancunTime := uint64(timestamp) + uint64(*config.L1CancunTimeOffset)
 		chainConfig.CancunTime = &cancunTime
+	}
+	if config.L1PragueTimeOffset != nil {
+		pragueTime := uint64(timestamp) + uint64(*config.L1PragueTimeOffset)
+		chainConfig.PragueTime = &pragueTime
 	}
 
 	return &core.Genesis{
