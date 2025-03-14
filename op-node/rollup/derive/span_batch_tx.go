@@ -47,12 +47,12 @@ type spanBatchDynamicFeeTxData struct {
 func (txData *spanBatchDynamicFeeTxData) txType() byte { return types.DynamicFeeTxType }
 
 type spanBatchSetCodeTxData struct {
-	Value      *uint256.Int
-	GasTipCap  *uint256.Int // a.k.a. maxPriorityFeePerGas
-	GasFeeCap  *uint256.Int // a.k.a. maxFeePerGas
-	Data       []byte
-	AccessList types.AccessList
-	AuthList   []types.SetCodeAuthorization
+	Value             *uint256.Int
+	GasTipCap         *uint256.Int // a.k.a. maxPriorityFeePerGas
+	GasFeeCap         *uint256.Int // a.k.a. maxFeePerGas
+	Data              []byte
+	AccessList        types.AccessList
+	AuthorizationList []types.SetCodeAuthorization
 }
 
 func (txData *spanBatchSetCodeTxData) txType() byte { return types.SetCodeTxType }
@@ -188,18 +188,18 @@ func (tx *spanBatchTx) convertToFullTx(nonce, gas uint64, to *common.Address, ch
 			S:          S,
 		}
 	case types.SetCodeTxType:
-		batchTxInner := tx.inner.(*spanBatchSetCodeTxData)
+		setCodeTxInner := tx.inner.(*spanBatchSetCodeTxData)
 		inner = &types.SetCodeTx{
 			ChainID:    uint256.MustFromBig(chainID),
 			Nonce:      nonce,
-			GasTipCap:  batchTxInner.GasTipCap,
-			GasFeeCap:  batchTxInner.GasFeeCap,
+			GasTipCap:  setCodeTxInner.GasTipCap,
+			GasFeeCap:  setCodeTxInner.GasFeeCap,
 			Gas:        gas,
 			To:         *to,
-			Value:      batchTxInner.Value,
-			Data:       batchTxInner.Data,
-			AccessList: batchTxInner.AccessList,
-			AuthList:   batchTxInner.AuthList,
+			Value:      setCodeTxInner.Value,
+			Data:       setCodeTxInner.Data,
+			AccessList: setCodeTxInner.AccessList,
+			AuthList:   setCodeTxInner.AuthorizationList,
 			V:          uint256.MustFromBig(V),
 			R:          uint256.MustFromBig(R),
 			S:          uint256.MustFromBig(S),
@@ -237,12 +237,12 @@ func newSpanBatchTx(tx *types.Transaction) (*spanBatchTx, error) {
 		}
 	case types.SetCodeTxType:
 		inner = &spanBatchSetCodeTxData{
-			GasTipCap:  uint256.MustFromBig(tx.GasTipCap()),
-			GasFeeCap:  uint256.MustFromBig(tx.GasFeeCap()),
-			Value:      uint256.MustFromBig(tx.Value()),
-			Data:       tx.Data(),
-			AccessList: tx.AccessList(),
-			AuthList:   tx.SetCodeAuthorizations(),
+			GasTipCap:         uint256.MustFromBig(tx.GasTipCap()),
+			GasFeeCap:         uint256.MustFromBig(tx.GasFeeCap()),
+			Value:             uint256.MustFromBig(tx.Value()),
+			Data:              tx.Data(),
+			AccessList:        tx.AccessList(),
+			AuthorizationList: tx.SetCodeAuthorizations(),
 		}
 	default:
 		return nil, fmt.Errorf("invalid tx type: %d", tx.Type())
