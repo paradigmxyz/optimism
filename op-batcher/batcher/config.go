@@ -6,19 +6,23 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/urfave/cli/v2"
 
 	altda "github.com/ethereum-optimism/optimism/op-alt-da"
 	"github.com/ethereum-optimism/optimism/op-batcher/compressor"
 	"github.com/ethereum-optimism/optimism/op-batcher/flags"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
-	"github.com/ethereum-optimism/optimism/op-service/eth"
 	oplog "github.com/ethereum-optimism/optimism/op-service/log"
 	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/ethereum-optimism/optimism/op-service/oppprof"
 	oprpc "github.com/ethereum-optimism/optimism/op-service/rpc"
 	"github.com/ethereum-optimism/optimism/op-service/txmgr"
 )
+
+// Current max blobs const, irrespective of active fork, is that of the Prague
+// blob config.
+var maxBlobsPerBlock = params.DefaultPragueBlobConfig.Max
 
 type CLIConfig struct {
 	// L1EthRpc is the HTTP provider URL for L1.
@@ -106,6 +110,9 @@ type CLIConfig struct {
 	// ThrottleAlwaysBlockSize is the total per-block DA limit to always imposing on block building.
 	ThrottleAlwaysBlockSize uint64
 
+	// PreferLocalSafeL2 triggers the batcher to load blocks from the sequencer based on the LocalSafeL2 SyncStatus field (instead of the SafeL2 field).
+	PreferLocalSafeL2 bool
+
 	// TestUseMaxTxSizeForBlobs allows to set the blob size with MaxL1TxSize.
 	// Should only be used for testing purposes.
 	TestUseMaxTxSizeForBlobs bool
@@ -155,9 +162,11 @@ func (c *CLIConfig) Check() error {
 	if !flags.ValidDataAvailabilityType(c.DataAvailabilityType) {
 		return fmt.Errorf("unknown data availability type: %q", c.DataAvailabilityType)
 	}
-	// we want to enforce it for both blobs and auto
-	if c.DataAvailabilityType != flags.CalldataType && c.TargetNumFrames > eth.MaxBlobsPerBlobTx {
-		return fmt.Errorf("too many frames for blob transactions, max %d", eth.MaxBlobsPerBlobTx)
+	// Most chains' L1s still have only Cancun active, but we don't want to
+	// overcomplicate this check with a dynamic L1 query, so we just use maxBlobsPerBlock.
+	// We want to check for both, blobs and auto da-type.
+	if c.DataAvailabilityType != flags.CalldataType && c.TargetNumFrames > maxBlobsPerBlock {
+		return fmt.Errorf("too many frames for blob transactions, max %d", maxBlobsPerBlock)
 	}
 	if err := c.MetricsConfig.Check(); err != nil {
 		return err
@@ -209,5 +218,6 @@ func NewConfig(ctx *cli.Context) *CLIConfig {
 		ThrottleTxSize:               ctx.Uint64(flags.ThrottleTxSizeFlag.Name),
 		ThrottleBlockSize:            ctx.Uint64(flags.ThrottleBlockSizeFlag.Name),
 		ThrottleAlwaysBlockSize:      ctx.Uint64(flags.ThrottleAlwaysBlockSizeFlag.Name),
+		PreferLocalSafeL2:            ctx.Bool(flags.PreferLocalSafeL2Flag.Name),
 	}
 }

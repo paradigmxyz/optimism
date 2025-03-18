@@ -422,7 +422,7 @@ func (l *BatchSubmitter) syncAndPrune(syncStatus *eth.SyncStatus) *inclusiveBloc
 	defer l.channelMgrMutex.Unlock()
 
 	// Decide appropriate actions
-	syncActions, outOfSync := computeSyncActions(*syncStatus, l.prevCurrentL1, l.channelMgr.blocks, l.channelMgr.channelQueue, l.Log)
+	syncActions, outOfSync := computeSyncActions(*syncStatus, l.prevCurrentL1, l.channelMgr.blocks, l.channelMgr.channelQueue, l.Log, l.Config.PreferLocalSafeL2)
 
 	if outOfSync {
 		// If the sequencer is out of sync
@@ -883,15 +883,19 @@ func (l *BatchSubmitter) sendTransaction(txdata txData, queue *txmgr.Queue[txRef
 	return nil
 }
 
+type TxSender[T any] interface {
+	Send(id T, candidate txmgr.TxCandidate, receiptCh chan txmgr.TxReceipt[T])
+}
+
 // sendTx uses the txmgr queue to send the given transaction candidate after setting its
 // gaslimit. It will block if the txmgr queue has reached its MaxPendingTransactions limit.
-func (l *BatchSubmitter) sendTx(txdata txData, isCancel bool, candidate *txmgr.TxCandidate, queue *txmgr.Queue[txRef], receiptsCh chan txmgr.TxReceipt[txRef]) {
-	intrinsicGas, err := core.IntrinsicGas(candidate.TxData, nil, nil, false, true, true, false)
+func (l *BatchSubmitter) sendTx(txdata txData, isCancel bool, candidate *txmgr.TxCandidate, queue TxSender[txRef], receiptsCh chan txmgr.TxReceipt[txRef]) {
+	floorDataGas, err := core.FloorDataGas(candidate.TxData)
 	if err != nil {
-		// we log instead of return an error here because txmgr can do its own gas estimation
-		l.Log.Error("Failed to calculate intrinsic gas", "err", err)
+		// We log instead of return an error here because the txmgr will do its own gas estimation.
+		l.Log.Warn("Failed to calculate floor data gas", "err", err)
 	} else {
-		candidate.GasLimit = intrinsicGas
+		candidate.GasLimit = floorDataGas
 	}
 
 	queue.Send(txRef{id: txdata.ID(), isCancel: isCancel, isBlob: txdata.asBlob}, *candidate, receiptsCh)

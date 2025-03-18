@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/predeploys"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -21,7 +22,7 @@ const defaultGasLimit = 30_000_000
 var HoloceneExtraData = eip1559.EncodeHoloceneExtraData(250, 6)
 
 // NewL2Genesis will create a new L2 genesis
-func NewL2Genesis(config *DeployConfig, l1StartHeader *types.Header) (*core.Genesis, error) {
+func NewL2Genesis(config *DeployConfig, l1StartHeader *eth.BlockRef) (*core.Genesis, error) {
 	if config.L2ChainID == 0 {
 		return nil, errors.New("must define L2 ChainID")
 	}
@@ -149,6 +150,8 @@ func NewL1Genesis(config *DeployConfig) (*core.Genesis, error) {
 		// To enable post-Merge consensus at genesis
 		MergeNetsplitBlock:      big.NewInt(0),
 		TerminalTotalDifficulty: big.NewInt(0),
+		// use default Ethereum prod blob schedules
+		BlobScheduleConfig: params.DefaultBlobSchedule,
 	}
 
 	gasLimit := config.L1GenesisBlockGasLimit

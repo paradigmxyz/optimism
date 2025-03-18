@@ -5,6 +5,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/event"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
+	"github.com/ethereum-optimism/optimism/op-supervisor/supervisor/backend/depset"
 	"github.com/stretchr/testify/require"
 )
 
@@ -61,20 +62,14 @@ type InteropDSL struct {
 	createdUsers uint64
 }
 
-func NewInteropDSL(t helpers.Testing) *InteropDSL {
-	setup := SetupInterop(t)
+func NewInteropDSL(t helpers.Testing, opts ...setupOption) *InteropDSL {
+	setup := SetupInterop(t, opts...)
 	actors := setup.CreateActors()
+	actors.PrepareChainState(t)
 
 	t.Logf("ChainA: %v, ChainB: %v", actors.ChainA.ChainID, actors.ChainB.ChainID)
 
 	allChains := []*Chain{actors.ChainA, actors.ChainB}
-
-	// Get all the initial events processed
-	for _, chain := range allChains {
-		chain.Sequencer.ActL2PipelineFull(t)
-		chain.Sequencer.SyncSupervisor(t)
-	}
-	actors.Supervisor.ProcessFull(t)
 
 	superRootSource, err := NewSuperRootSource(
 		t.Ctx(),
@@ -95,6 +90,10 @@ func NewInteropDSL(t helpers.Testing) *InteropDSL {
 
 		allChains: allChains,
 	}
+}
+
+func (d *InteropDSL) DepSet() *depset.StaticConfigDependencySet {
+	return d.setup.DepSet
 }
 
 func (d *InteropDSL) defaultChainOpts() ChainOpts {
@@ -284,5 +283,52 @@ func (d *InteropDSL) AdvanceL1(optionalArgs ...func(*AdvanceL1Opts)) {
 		status := chain.Sequencer.SyncStatus()
 		require.Equalf(d.t, newBlock, status.HeadL1, "Chain %v did not detect new L1 head", chain.ChainID)
 		require.Equalf(d.t, newBlock, status.CurrentL1, "Chain %v did not process new L1 head", chain.ChainID)
+	}
+}
+
+// DeployEmitterContracts deploys an emitter contract on both chains
+func (d *InteropDSL) DeployEmitterContracts() *EmitterContract {
+	emitter := NewEmitterContract(d.t)
+	alice := d.CreateUser()
+	d.AddL2Block(d.Actors.ChainA, WithL2BlockTransactions(
+		emitter.Deploy(alice),
+	))
+	d.AddL2Block(d.Actors.ChainB, WithL2BlockTransactions(
+		emitter.Deploy(alice),
+	))
+	return emitter
+}
+
+type AdvanceSafeHeadsOpts struct {
+	SingleBatch bool
+}
+
+func WithSingleBatch() func(*AdvanceSafeHeadsOpts) {
+	return func(o *AdvanceSafeHeadsOpts) {
+		o.SingleBatch = true
+	}
+}
+
+// AdvanceSafeHeads advances the safe heads for all chains by adding a new L2 block and submitting batch data for each chain.
+// By default, submits batch data for each chain in separate L1 blocks.
+func (d *InteropDSL) AdvanceSafeHeads(optionalArgs ...func(*AdvanceSafeHeadsOpts)) {
+	opts := AdvanceSafeHeadsOpts{
+		SingleBatch: false,
+	}
+	for _, arg := range optionalArgs {
+		arg(&opts)
+	}
+
+	d.AddL2Block(d.Actors.ChainA)
+	d.AddL2Block(d.Actors.ChainB)
+	if opts.SingleBatch {
+		d.SubmitBatchData()
+	} else {
+		d.SubmitBatchData(func(opts *SubmitBatchDataOpts) {
+			opts.SetChains(d.Actors.ChainA)
+		})
+		d.SubmitBatchData(func(opts *SubmitBatchDataOpts) {
+			opts.SetChains(d.Actors.ChainB)
+		})
 	}
 }
