@@ -7,20 +7,23 @@ import (
 	"os"
 	"testing"
 
-	"github.com/ethereum-optimism/optimism/devnet-sdk/descriptors"
 	"github.com/ethereum-optimism/optimism/devnet-sdk/interfaces"
 	"github.com/ethereum-optimism/optimism/devnet-sdk/shell/env"
 	"github.com/ethereum-optimism/optimism/devnet-sdk/system"
 	"github.com/ethereum-optimism/optimism/devnet-sdk/types"
+	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/sources"
+	supervisorTypes "github.com/ethereum-optimism/optimism/op-supervisor/supervisor/types"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/stretchr/testify/require"
 )
 
 var (
-	_ system.Chain = (*mockChain)(nil)
+	_ system.Chain   = (*mockChain)(nil)
+	_ system.L2Chain = (*mockL2Chain)(nil)
 )
 
 // mockTB implements a minimal testing.TB for testing
@@ -87,8 +90,8 @@ func (m *mockChain) Client() (*sources.EthClient, error)             { return ni
 func (m *mockChain) GethClient() (*ethclient.Client, error)          { return nil, nil }
 func (m *mockChain) ID() types.ChainID                               { return types.ChainID(big.NewInt(1)) }
 func (m *mockChain) ContractsRegistry() interfaces.ContractsRegistry { return nil }
-func (m *mockChain) Wallets(ctx context.Context) ([]system.Wallet, error) {
-	return nil, nil
+func (m *mockChain) Wallets() system.WalletMap {
+	return nil
 }
 func (m *mockChain) GasPrice(ctx context.Context) (*big.Int, error) {
 	return big.NewInt(1), nil
@@ -105,22 +108,77 @@ func (m *mockChain) SupportsEIP(ctx context.Context, eip uint64) bool {
 func (m *mockChain) Config() (*params.ChainConfig, error) {
 	return nil, fmt.Errorf("not implemented on mockChain")
 }
-func (m *mockChain) Addresses() descriptors.AddressMap {
-	return descriptors.AddressMap{}
+func (m *mockChain) Addresses() system.AddressMap {
+	return system.AddressMap{}
+}
+
+// mockL2Chain implements a minimal system.L2Chain for testing
+type mockL2Chain struct {
+	mockChain
+}
+
+func (m *mockL2Chain) L1Addresses() system.AddressMap {
+	return system.AddressMap{}
+}
+func (m *mockL2Chain) L1Wallets() system.WalletMap {
+	return system.WalletMap{}
 }
 
 // mockSystem implements a minimal system.System for testing
 type mockSystem struct{}
 
-func (m *mockSystem) Identifier() string  { return "mock" }
-func (m *mockSystem) L1() system.Chain    { return &mockChain{} }
-func (m *mockSystem) L2s() []system.Chain { return []system.Chain{&mockChain{}} }
-func (m *mockSystem) Close() error        { return nil }
+func (m *mockSystem) Identifier() string    { return "mock" }
+func (m *mockSystem) L1() system.Chain      { return &mockChain{} }
+func (m *mockSystem) L2s() []system.L2Chain { return []system.L2Chain{&mockL2Chain{}} }
+func (m *mockSystem) Close() error          { return nil }
 
 // mockInteropSet implements a minimal system.InteropSet for testing
 type mockInteropSet struct{}
 
-func (m *mockInteropSet) L2s() []system.Chain { return []system.Chain{&mockChain{}} }
+func (m *mockInteropSet) L2s() []system.L2Chain { return []system.L2Chain{&mockL2Chain{}} }
+
+// mockSupervisor implements the system.Supervisor interface for testing
+type mockSupervisor struct{}
+
+func (m *mockSupervisor) LocalUnsafe(ctx context.Context, chainID eth.ChainID) (eth.BlockID, error) {
+	return eth.BlockID{}, nil
+}
+
+func (m *mockSupervisor) CrossSafe(ctx context.Context, chainID eth.ChainID) (supervisorTypes.DerivedIDPair, error) {
+	return supervisorTypes.DerivedIDPair{}, nil
+}
+
+func (m *mockSupervisor) Finalized(ctx context.Context, chainID eth.ChainID) (eth.BlockID, error) {
+	return eth.BlockID{}, nil
+}
+
+func (m *mockSupervisor) FinalizedL1(ctx context.Context) (eth.BlockRef, error) {
+	return eth.BlockRef{}, nil
+}
+
+func (m *mockSupervisor) CrossDerivedFrom(ctx context.Context, chainID eth.ChainID, blockID eth.BlockID) (eth.BlockRef, error) {
+	return eth.BlockRef{}, nil
+}
+
+func (m *mockSupervisor) UpdateLocalUnsafe(ctx context.Context, chainID eth.ChainID, blockRef eth.BlockRef) error {
+	return nil
+}
+
+func (m *mockSupervisor) UpdateLocalSafe(ctx context.Context, chainID eth.ChainID, l1BlockRef eth.L1BlockRef, blockRef eth.BlockRef) error {
+	return nil
+}
+
+func (m *mockSupervisor) SuperRootAtTimestamp(ctx context.Context, timestamp hexutil.Uint64) (eth.SuperRootResponse, error) {
+	return eth.SuperRootResponse{}, nil
+}
+
+func (m *mockSupervisor) AllSafeDerivedAt(ctx context.Context, blockID eth.BlockID) (map[eth.ChainID]eth.BlockID, error) {
+	return nil, nil
+}
+
+func (m *mockSupervisor) SyncStatus(ctx context.Context) (eth.SupervisorSyncStatus, error) {
+	return eth.SupervisorSyncStatus{}, nil
+}
 
 // mockInteropSystem implements a minimal system.InteropSystem for testing
 type mockInteropSystem struct {
@@ -128,6 +186,11 @@ type mockInteropSystem struct {
 }
 
 func (m *mockInteropSystem) InteropSet() system.InteropSet { return &mockInteropSet{} }
+
+// Supervisor implements the system.InteropSystem interface
+func (m *mockInteropSystem) Supervisor(ctx context.Context) (system.Supervisor, error) {
+	return &mockSupervisor{}, nil
+}
 
 // newMockSystem creates a new mock system for testing
 func newMockSystem() system.System {

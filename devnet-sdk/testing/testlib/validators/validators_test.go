@@ -6,7 +6,7 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/ethereum-optimism/optimism/devnet-sdk/descriptors"
+	"github.com/ethereum-optimism/optimism/devnet-sdk/contracts/bindings"
 	"github.com/ethereum-optimism/optimism/devnet-sdk/interfaces"
 	"github.com/ethereum-optimism/optimism/devnet-sdk/system"
 	"github.com/ethereum-optimism/optimism/devnet-sdk/testing/systest"
@@ -39,19 +39,23 @@ func TestValidators(t *testing.T) {
 		// We create a system that has a low-level L1 chain and at least one wallet
 		systestSystem := &mockSystem{
 			l1: &mockChain{},
-			l2s: []system.Chain{
-				&mockChain{
-					wallets: []system.Wallet{
-						&mockWallet{
-							balance: types.NewBalance(big.NewInt(2)),
+			l2s: []system.L2Chain{
+				&mockL2Chain{
+					mockChain: mockChain{
+						wallets: system.WalletMap{
+							"user1": &mockWallet{
+								address: types.Address(common.HexToAddress("0x1")),
+								balance: types.NewBalance(big.NewInt(2)),
+							},
+							"user2": &mockWallet{
+								address: types.Address(common.HexToAddress("0x2")),
+								balance: types.NewBalance(big.NewInt(11)),
+							},
 						},
-						&mockWallet{
-							balance: types.NewBalance(big.NewInt(11)),
+						config: &params.ChainConfig{
+							Optimism:    &params.OptimismConfig{},
+							IsthmusTime: Uint64Ptr(0),
 						},
-					},
-					config: &params.ChainConfig{
-						Optimism:    &params.OptimismConfig{},
-						IsthmusTime: Uint64Ptr(0),
 					},
 				},
 			},
@@ -100,11 +104,13 @@ func TestValidators(t *testing.T) {
 	t.Run("test AcquireL2WithFork - fork active", func(t *testing.T) {
 		// Create a system with the Isthmus fork active
 		systestSystem := &mockSystem{
-			l2s: []system.Chain{
-				&mockChain{
-					config: &params.ChainConfig{
-						Optimism:    &params.OptimismConfig{},
-						IsthmusTime: Uint64Ptr(50),
+			l2s: []system.L2Chain{
+				&mockL2Chain{
+					mockChain: mockChain{
+						config: &params.ChainConfig{
+							Optimism:    &params.OptimismConfig{},
+							IsthmusTime: Uint64Ptr(50),
+						},
 					},
 				},
 			},
@@ -129,11 +135,13 @@ func TestValidators(t *testing.T) {
 	t.Run("test AcquireL2WithFork - fork not active", func(t *testing.T) {
 		// Create a system where the Isthmus fork is not yet active
 		systestSystem := &mockSystem{
-			l2s: []system.Chain{
-				&mockChain{
-					config: &params.ChainConfig{
-						Optimism:    &params.OptimismConfig{},
-						IsthmusTime: Uint64Ptr(150),
+			l2s: []system.L2Chain{
+				&mockL2Chain{
+					mockChain: mockChain{
+						config: &params.ChainConfig{
+							Optimism:    &params.OptimismConfig{},
+							IsthmusTime: Uint64Ptr(150),
+						},
 					},
 				},
 			},
@@ -152,11 +160,13 @@ func TestValidators(t *testing.T) {
 	t.Run("test AcquireRequiresNotL2Fork - fork not active", func(t *testing.T) {
 		// Create a system where the Isthmus fork is not yet active
 		systestSystem := &mockSystem{
-			l2s: []system.Chain{
-				&mockChain{
-					config: &params.ChainConfig{
-						Optimism:    &params.OptimismConfig{},
-						IsthmusTime: Uint64Ptr(150), // Activates after current timestamp
+			l2s: []system.L2Chain{
+				&mockL2Chain{
+					mockChain: mockChain{
+						config: &params.ChainConfig{
+							Optimism:    &params.OptimismConfig{},
+							IsthmusTime: Uint64Ptr(150), // Activates after current timestamp
+						},
 					},
 				},
 			},
@@ -181,11 +191,13 @@ func TestValidators(t *testing.T) {
 	t.Run("test AcquireRequiresNotL2Fork - fork active", func(t *testing.T) {
 		// Create a system with the Isthmus fork active
 		systestSystem := &mockSystem{
-			l2s: []system.Chain{
-				&mockChain{
-					config: &params.ChainConfig{
-						Optimism:    &params.OptimismConfig{},
-						IsthmusTime: Uint64Ptr(50),
+			l2s: []system.L2Chain{
+				&mockL2Chain{
+					mockChain: mockChain{
+						config: &params.ChainConfig{
+							Optimism:    &params.OptimismConfig{},
+							IsthmusTime: Uint64Ptr(50),
+						},
 					},
 				},
 			},
@@ -204,7 +216,7 @@ func TestValidators(t *testing.T) {
 	t.Run("chain index out of range", func(t *testing.T) {
 		// Create a system with no L2 chains
 		systestSystem := &mockSystem{
-			l2s: []system.Chain{},
+			l2s: []system.L2Chain{},
 		}
 
 		// Try to get chain config for an invalid chain index
@@ -220,7 +232,7 @@ func TestValidators(t *testing.T) {
 
 type mockSystem struct {
 	l1  system.Chain
-	l2s []system.Chain
+	l2s []system.L2Chain
 }
 
 func (sys *mockSystem) Identifier() string {
@@ -231,12 +243,12 @@ func (sys *mockSystem) L1() system.Chain {
 	return sys.l1
 }
 
-func (sys *mockSystem) L2s() []system.Chain {
+func (sys *mockSystem) L2s() []system.L2Chain {
 	return sys.l2s
 }
 
 type mockChain struct {
-	wallets []system.Wallet
+	wallets system.WalletMap
 	config  *params.ChainConfig
 }
 
@@ -245,8 +257,8 @@ func (m *mockChain) Client() (*sources.EthClient, error)             { return ni
 func (m *mockChain) GethClient() (*ethclient.Client, error)          { return nil, nil }
 func (m *mockChain) ID() types.ChainID                               { return types.ChainID(big.NewInt(1)) }
 func (m *mockChain) ContractsRegistry() interfaces.ContractsRegistry { return nil }
-func (m *mockChain) Wallets(ctx context.Context) ([]system.Wallet, error) {
-	return m.wallets, nil
+func (m *mockChain) Wallets() system.WalletMap {
+	return m.wallets
 }
 func (m *mockChain) GasPrice(ctx context.Context) (*big.Int, error) {
 	return big.NewInt(1), nil
@@ -270,8 +282,20 @@ func (m *mockChain) Node() system.Node {
 	return newMockNode(m.config)
 }
 
-func (m *mockChain) Addresses() descriptors.AddressMap {
-	return descriptors.AddressMap{}
+func (m *mockChain) Addresses() system.AddressMap {
+	return system.AddressMap{}
+}
+
+type mockL2Chain struct {
+	mockChain
+	l1Wallets system.WalletMap
+}
+
+func (m *mockL2Chain) L1Addresses() system.AddressMap {
+	return system.AddressMap{}
+}
+func (m *mockL2Chain) L1Wallets() system.WalletMap {
+	return m.l1Wallets
 }
 
 type mockNode struct {
@@ -324,6 +348,14 @@ func (m mockWallet) SendETH(to types.Address, amount types.Balance) types.WriteI
 	panic("not implemented")
 }
 
+func (m mockWallet) InitiateMessage(chainID types.ChainID, target common.Address, message []byte) types.WriteInvocation[any] {
+	panic("not implemented")
+}
+
+func (m mockWallet) ExecuteMessage(identifier bindings.Identifier, sentMessage []byte) types.WriteInvocation[any] {
+	panic("not implemented")
+}
+
 func (m mockWallet) Nonce() uint64 {
 	return 0
 }
@@ -341,8 +373,10 @@ func (m mockWallet) Transactor() *bind.TransactOpts {
 }
 
 var (
-	_ system.Chain         = (*mockChain)(nil)
-	_ system.LowLevelChain = (*mockChain)(nil)
-	_ system.System        = (*mockSystem)(nil)
-	_ system.Wallet        = (*mockWallet)(nil)
+	_ system.Chain           = (*mockChain)(nil)
+	_ system.LowLevelChain   = (*mockChain)(nil)
+	_ system.L2Chain         = (*mockL2Chain)(nil)
+	_ system.LowLevelL2Chain = (*mockL2Chain)(nil)
+	_ system.System          = (*mockSystem)(nil)
+	_ system.Wallet          = (*mockWallet)(nil)
 )
